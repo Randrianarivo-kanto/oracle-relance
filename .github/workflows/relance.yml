@@ -11,9 +11,10 @@ concurrency:
 jobs:
   relance:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 350
     env:
       OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING: "True"
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/setup-python@v5
         with:
@@ -32,11 +33,16 @@ jobs:
           printf '%s\n' "$OCI_KEY" > ~/.oci/key.pem
           printf '[DEFAULT]\nuser=%s\nfingerprint=%s\ntenancy=%s\nregion=%s\nkey_file=~/.oci/key.pem\n' "$OCI_USER" "$OCI_FINGERPRINT" "$OCI_TENANCY" "$OCI_REGION" > ~/.oci/config
           chmod 600 ~/.oci/key.pem ~/.oci/config
-      - name: Tenter la creation
+      - name: Tenter la creation en boucle
         env:
           OCI_STACK: ${{ secrets.OCI_STACK }}
-          GH_TOKEN: ${{ github.token }}
         run: |
-          R=$(oci resource-manager job create-apply-job --stack-id "$OCI_STACK" --execution-plan-strategy AUTO_APPROVED --wait-for-state SUCCEEDED --wait-for-state FAILED --query 'data."lifecycle-state"' --raw-output 2>&1 | tail -1)
-          echo "Resultat : $R"
-          if [ "$R" = "SUCCEEDED" ]; then echo "SERVEUR CREE"; gh workflow disable relance.yml -R "$GITHUB_REPOSITORY"; fi
+          FIN=$(( $(date +%s) + 19800 ))
+          while [ "$(date +%s)" -lt "$FIN" ]; do
+            R=$(oci resource-manager job create-apply-job --stack-id "$OCI_STACK" --execution-plan-strategy AUTO_APPROVED --wait-for-state SUCCEEDED --wait-for-state FAILED --query 'data."lifecycle-state"' --raw-output 2>&1 | tail -1)
+            echo "$(TZ=Indian/Antananarivo date +%H:%M) - Resultat : $R"
+            if [ "$R" = "SUCCEEDED" ]; then echo "SERVEUR CREE"; gh workflow disable relance.yml -R "$GITHUB_REPOSITORY"; exit 0; fi
+            sleep 300
+          done
+          gh workflow run relance.yml -R "$GITHUB_REPOSITORY" --ref main
+          echo "Cycle suivant lance"
