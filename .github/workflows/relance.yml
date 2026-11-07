@@ -1,7 +1,5 @@
 name: Relance serveur Oracle
 on:
-  schedule:
-    - cron: '*/6 * * * *'
   workflow_dispatch:
 permissions:
   actions: write
@@ -39,9 +37,11 @@ jobs:
         run: |
           FIN=$(( $(date +%s) + 19800 ))
           while [ "$(date +%s)" -lt "$FIN" ]; do
-            R=$(oci resource-manager job create-apply-job --stack-id "$OCI_STACK" --execution-plan-strategy AUTO_APPROVED --wait-for-state SUCCEEDED --wait-for-state FAILED --query 'data."lifecycle-state"' --raw-output 2>&1 | tail -1)
-            echo "$(TZ=Indian/Antananarivo date +%H:%M) - Resultat : $R"
-            if [ "$R" = "SUCCEEDED" ]; then echo "SERVEUR CREE"; gh workflow disable relance.yml -R "$GITHUB_REPOSITORY"; exit 0; fi
+            OUT=$(oci resource-manager job create-apply-job --stack-id "$OCI_STACK" --execution-plan-strategy AUTO_APPROVED --wait-for-state SUCCEEDED --wait-for-state FAILED --query 'data."lifecycle-state"' --raw-output 2>&1 || true)
+            R=$(printf '%s\n' "$OUT" | tail -1)
+            H=$(TZ=Indian/Antananarivo date +%H:%M)
+            if [ "$R" = "SUCCEEDED" ]; then echo "$H - SERVEUR CREE"; gh workflow disable relance.yml -R "$GITHUB_REPOSITORY"; exit 0; fi
+            if [ "$R" = "FAILED" ]; then echo "$H - Resultat : FAILED (pas de place)"; else echo "$H - ERREUR : $(printf '%s\n' "$OUT" | grep -E '"(code|message)"' | tr -s ' ' | tr '\n' ' ')"; fi
             sleep 300
           done
           gh workflow run relance.yml -R "$GITHUB_REPOSITORY" --ref main
