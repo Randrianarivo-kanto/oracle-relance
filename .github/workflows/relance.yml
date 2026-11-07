@@ -1,0 +1,42 @@
+name: Relance serveur Oracle
+on:
+  schedule:
+    - cron: '*/6 * * * *'
+  workflow_dispatch:
+permissions:
+  actions: write
+concurrency:
+  group: relance
+  cancel-in-progress: false
+jobs:
+  relance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING: "True"
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Installer OCI CLI
+        run: pip install -q oci-cli
+      - name: Configurer
+        env:
+          OCI_KEY: ${{ secrets.OCI_KEY }}
+          OCI_USER: ${{ secrets.OCI_USER }}
+          OCI_TENANCY: ${{ secrets.OCI_TENANCY }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_REGION: ${{ secrets.OCI_REGION }}
+        run: |
+          mkdir -p ~/.oci
+          printf '%s\n' "$OCI_KEY" > ~/.oci/key.pem
+          printf '[DEFAULT]\nuser=%s\nfingerprint=%s\ntenancy=%s\nregion=%s\nkey_file=~/.oci/key.pem\n' "$OCI_USER" "$OCI_FINGERPRINT" "$OCI_TENANCY" "$OCI_REGION" > ~/.oci/config
+          chmod 600 ~/.oci/key.pem ~/.oci/config
+      - name: Tenter la creation
+        env:
+          OCI_STACK: ${{ secrets.OCI_STACK }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          R=$(oci resource-manager job create-apply-job --stack-id "$OCI_STACK" --execution-plan-strategy AUTO_APPROVED --wait-for-state SUCCEEDED --wait-for-state FAILED --query 'data."lifecycle-state"' --raw-output 2>&1 | tail -1)
+          echo "Resultat : $R"
+          if [ "$R" = "SUCCEEDED" ]; then echo "SERVEUR CREE"; gh workflow disable relance.yml -R "$GITHUB_REPOSITORY"; fi
